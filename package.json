@@ -1,0 +1,56 @@
+{
+  "name": "proof-of-class",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false server.ts",
+    "build": "next build",
+    "start": "cross-env NODE_ENV=production tsx server.ts",
+    "typecheck": "tsc --noEmit",
+    "indexer": "tsx scripts/indexer.ts",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --skip-seed",
+    "db:reset:demo": "prisma migrate reset",
+    "db:studio": "prisma studio",
+    "chain": "hardhat node",
+    "fund": "tsx scripts/fund.ts",
+    "contracts:compile": "hardhat compile && npm run contracts:abis",
+    "contracts:abis": "tsx scripts/export-abis.ts",
+    "contracts:test": "hardhat test",
+    "contracts:deploy": "tsx scripts/deploy.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "@tanstack/react-query": "^5.102.8",
+    "cross-env": "^10.1.0",
+    "next": "^16.3.3",
+    "next-auth": "^5.0.0-beta.32",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
+    "viem": "^2.56.1",
+    "wagmi": "^3.7.7",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.6.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "dotenv": "^17.4.2",
+    "hardhat": "^2.29.1",
+    "postcss": "^8.5.26",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
+  }
+}

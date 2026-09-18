@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@source "../app/**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
+
+@theme {
+  --color-ink-950: #07080f;
+  --color-ink-900: #0c0e1a;
+  --color-ink-850: #111426;
+  --color-ink-800: #171a2e;
+  --color-ink-700: #232741;
+  --color-ink-600: #343a5c;
+  --color-ink-400: #7c84ad;
+  --color-ink-300: #a6adcd;
+
+  --color-brand-400: #7c8cff;
+  --color-brand-500: #5b6cff;
+  --color-brand-600: #4453e8;
+
+  --color-weekly-400: #4ec9f5;
+  --color-weekly-600: #1f8fbd;
+  --color-monthly-400: #ffc94a;
+  --color-monthly-600: #d99512;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(60rem 40rem at 15% -10%, rgba(91, 108, 255, 0.16), transparent 60%),
+    radial-gradient(50rem 35rem at 90% 0%, rgba(78, 201, 245, 0.1), transparent 55%),
+    var(--color-ink-950);
+  color: #e8ebff;
+  min-height: 100vh;
+}
+
+@utility panel {
+  border-radius: 1rem;
+  border: 1px solid var(--color-ink-700);
+  background-color: color-mix(in oklab, var(--color-ink-850) 85%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+@utility label-xs {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-400);
+}
+
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 9999px;
+}

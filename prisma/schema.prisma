@@ -1,0 +1,265 @@
+// ProofOfClass - off-chain relational layer.
+//
+// The chain is the source of truth for token balances and badge ownership.
+// This database stores everything the chain cannot cheaply express: profiles,
+// join codes, membership approvals, point categories, quick-call timings, and
+// an indexed mirror of on-chain events used to drive leaderboards.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  TRAINER
+  TRAINEE
+}
+
+/// Lifecycle of a request to teach. `role` only becomes TRAINER once the
+/// platform owner approves, so this is the audit trail behind that promotion.
+enum TrainerStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REMOVED
+}
+
+enum PointCategory {
+  CLASS
+  PROJECT
+  PUBLIC_VOTE
+}
+
+enum BadgeType {
+  WEEKLY
+  MONTHLY
+}
+
+enum TxStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  /// Always stored lowercase so lookups are case-insensitive.
+  walletAddress String   @unique
+  role          Role     @default(TRAINEE)
+  displayName   String?
+  avatarUrl     String?
+  bio           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  /// Trainer application. Nothing here is self-serviceable: only the platform
+  /// owner configured in NEXT_PUBLIC_PLATFORM_OWNER_ADDRESS can move this to
+  /// APPROVED, which is also the only thing that sets `role` to TRAINER.
+  trainerStatus      TrainerStatus @default(NONE)
+  trainerRequestedAt DateTime?
+  /// The applicant's case for teaching, shown on the owner's dashboard.
+  trainerPitch       String?
+  trainerReviewedAt  DateTime?
+  /// Wallet of the reviewing owner. Stored as an address rather than a relation
+  /// because the owner comes from env and need not have a User row yet.
+  trainerReviewedBy  String?
+  /// Shown back to the applicant, so a rejection can explain itself.
+  trainerReviewNote  String?
+
+  ownedClassrooms   Classroom[]         @relation("ClassroomCreator")
+  memberships       ClassMembership[]
+  approvedRequests  ClassMembership[]   @relation("MembershipApprover")
+  pointsReceived    PointLog[]          @relation("PointReceiver")
+  pointsAwarded     PointLog[]          @relation("PointAwarder")
+  badges            BadgeAward[]
+  quickCallsCreated QuickCall[]         @relation("QuickCallCreator")
+  quickCallAnswers  QuickCallResponse[]
+
+  @@index([trainerStatus, trainerRequestedAt])
+}
+
+model Classroom {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  /// Short human-typeable code trainees use to join.
+  joinCode    String  @unique
+  /// When true, joining by code grants APPROVED membership immediately.
+  autoApprove Boolean @default(false)
+  isActive    Boolean @default(true)
+
+  /// ERC-20 points token deployed for this classroom (owner = trainer).
+  tokenAddress  String?
+  tokenSymbol   String?
+  tokenDecimals Int     @default(18)
+  /// ERC-1155 badge collection deployed for this classroom.
+  badgeAddress  String?
+  chainId       Int
+  /// Block the contracts were deployed in - the indexer starts scanning here.
+  deployedBlock BigInt?
+
+  creatorId String
+  creator   User   @relation("ClassroomCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships ClassMembership[]
+  points      PointLog[]
+  badgeAwards BadgeAward[]
+  quickCalls  QuickCall[]
+
+  @@index([creatorId])
+  @@index([tokenAddress])
+}
+
+model ClassMembership {
+  id     String           @id @default(cuid())
+  status MembershipStatus @default(PENDING)
+
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classroomId String
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  requestedAt  DateTime  @default(now())
+  approvedAt   DateTime?
+  approvedById String?
+  approvedBy   User?     @relation("MembershipApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, classroomId])
+  @@index([classroomId, status])
+}
+
+model PointLog {
+  id String @id @default(cuid())
+
+  classroomId String
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  receiverId String
+  receiver   User   @relation("PointReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  /// Denormalized so the indexer can resolve rows straight from a log topic.
+  receiverWallet String
+
+  awardedById String?
+  awardedBy   User?   @relation("PointAwarder", fields: [awardedById], references: [id], onDelete: SetNull)
+
+  /// Human-readable points as entered by the trainer.
+  points Int
+  /// Exact on-chain amount in base units. Decimal(78,0) holds a full uint256,
+  /// which Postgres `bigint` cannot.
+  amountWei Decimal @db.Decimal(78, 0)
+
+  category PointCategory
+  note     String?
+
+  status      TxStatus  @default(PENDING)
+  txHash      String?
+  logIndex    Int?
+  blockNumber BigInt?
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime?
+
+  /// Guarantees the indexer can replay logs without duplicating rows.
+  @@unique([txHash, logIndex])
+  @@index([classroomId, status, createdAt])
+  @@index([receiverId, createdAt])
+  @@index([classroomId, category])
+}
+
+model BadgeAward {
+  id String @id @default(cuid())
+
+  classroomId String
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  userId          String
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipientWallet String
+
+  badgeType BadgeType
+  tokenId   Int
+  quantity  Int       @default(1)
+  /// "2026-W35" for weekly, "2026-08" for monthly.
+  periodKey String
+
+  status   TxStatus @default(PENDING)
+  txHash   String?
+  logIndex Int?
+
+  awardedAt DateTime @default(now())
+
+  /// One winner per classroom, per badge tier, per period.
+  @@unique([classroomId, badgeType, periodKey])
+  @@unique([txHash, logIndex])
+  @@index([userId, badgeType])
+}
+
+model QuickCall {
+  id String @id @default(cuid())
+
+  classroomId String
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation("QuickCallCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  question String
+  /// [{ id: string, label: string }] - omit for a pure "tap first" race.
+  options         Json?
+  correctOptionId String?
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  responses QuickCallResponse[]
+
+  @@index([classroomId, startedAt])
+}
+
+model QuickCallResponse {
+  id String @id @default(cuid())
+
+  quickCallId String
+  quickCall   QuickCall @relation(fields: [quickCallId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  optionId String?
+  /// Reported by the browser. Displayed only - never used for ranking, since
+  /// a client can trivially lie about its own clock.
+  clientClickAt DateTime?
+  /// Authoritative arrival time measured on the server.
+  serverReceivedAt DateTime
+  /// Milliseconds from quick-call start to server receipt.
+  latencyMs Int
+  rank      Int?
+  isCorrect Boolean?
+
+  @@unique([quickCallId, userId])
+  @@index([quickCallId, latencyMs])
+}
+
+/// Checkpoint per contract so the indexer can resume without rescanning.
+model IndexerCursor {
+  id              String   @id @default(cuid())
+  chainId         Int
+  contractAddress String
+  lastBlock       BigInt
+  updatedAt       DateTime @updatedAt
+
+  @@unique([chainId, contractAddress])
+}
