@@ -21,13 +21,37 @@ import { getActiveQuickCallForClassroom } from "./lib/realtime/quick-call";
 import { setIo, type RealtimeServer } from "./lib/realtime/registry";
 
 const dev = process.env.NODE_ENV !== "production";
-const hostname = process.env.HOSTNAME ?? "localhost";
 const port = Number(process.env.PORT ?? 3000);
 
-// Auth.js prefixes the cookie with __Secure- when it is issued over https, and
-// derives the JWT decryption salt from that same name - so this flag must match
-// how the cookie was written or getToken silently returns null.
-const useSecureCookies = (process.env.AUTH_URL ?? "").startsWith("https://");
+function hostnameFromAuthUrl(): string | undefined {
+  const raw = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
+  if (!raw) return undefined;
+  try {
+    return new URL(raw).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+// Next uses this for HMR / origin checks. Prefer AUTH_URL so a reverse-proxied
+// host like class.jigmenidup.site is recognised instead of "localhost".
+const hostname =
+  process.env.HOSTNAME ?? hostnameFromAuthUrl() ?? "localhost";
+
+async function readSessionToken(cookie: string) {
+  // Auth.js names the cookie `__Secure-…` on HTTPS and derives the JWT salt
+  // from that name. AUTH_URL can disagree with the actual request (localhost
+  // in .env, TLS at nginx), so try both rather than guessing wrong.
+  for (const secureCookie of [true, false] as const) {
+    const token = await getToken({
+      req: { headers: new Headers({ cookie }) },
+      secret: process.env.AUTH_SECRET!,
+      secureCookie,
+    });
+    if (token?.id) return token;
+  }
+  return null;
+}
 
 async function main() {
   const app = next({ dev, hostname, port });
@@ -35,23 +59,25 @@ async function main() {
   const handle = app.getRequestHandler();
 
   const httpServer = createServer((req, res) => {
+    // Let Socket.io own its path. If Next handles it first, polling returns
+    // a 404 HTML page and the websocket upgrade never completes.
+    if (req.url?.startsWith(SOCKET_PATH)) return;
     handle(req, res);
   });
 
   const io: RealtimeServer = new Server(httpServer, {
     path: SOCKET_PATH,
     serveClient: false,
-    cors: dev ? { origin: true, credentials: true } : undefined,
+    cors: { origin: true, credentials: true },
+    transports: ["websocket", "polling"],
+    pingInterval: 25_000,
+    pingTimeout: 20_000,
   });
 
   io.use(async (socket, nextFn) => {
     try {
       const cookie = socket.handshake.headers.cookie ?? "";
-      const token = await getToken({
-        req: { headers: new Headers({ cookie }) },
-        secret: process.env.AUTH_SECRET!,
-        secureCookie: useSecureCookies,
-      });
+      const token = await readSessionToken(cookie);
 
       if (!token?.id) return nextFn(new Error("unauthorized"));
 
@@ -144,8 +170,8 @@ async function main() {
 
   setIo(io);
 
-  httpServer.listen(port, () => {
-    console.log(`> ProofOfClass ready on http://${hostname}:${port}`);
+  httpServer.listen(port, "0.0.0.0", () => {
+    console.log(`> ProofOfClass ready on http://0.0.0.0:${port} (host ${hostname})`);
     console.log(`> Socket.io listening on ${SOCKET_PATH}`);
   });
 }
