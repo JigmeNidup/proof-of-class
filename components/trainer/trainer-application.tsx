@@ -44,8 +44,12 @@ export function TrainerApplication({
     onSuccess: async () => {
       setPitch("");
       await queryClient.invalidateQueries({ queryKey: queryKeys.me });
-      // JWT still says TRAINEE until we pull the new role into the session.
-      await update();
+      try {
+        await update();
+      } catch {
+        // The JWT callback re-reads the database on the next session check,
+        // so a failed client update must not fail the application itself.
+      }
       onRefresh();
     },
   });

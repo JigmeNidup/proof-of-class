@@ -3,7 +3,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useEffect, useRef } from "react";
 
 import { AuthGate } from "@/components/auth-gate";
 import { SiteHeader } from "@/components/site-header";
@@ -40,29 +39,19 @@ export default function TrainerPage() {
  */
 function TrainerHome() {
   const queryClient = useQueryClient();
-  const { data: session, update } = useSession();
-  const jwtSynced = useRef(false);
+  const { update } = useSession();
 
   const meQuery = useQuery({
     queryKey: queryKeys.me,
     queryFn: () => apiFetch<{ user: UserDto }>("/api/users/me"),
     // Poll only while waiting, so an approval lands without a manual reload.
     refetchInterval: (query) =>
-      query.state.data?.user.trainerStatus === "PENDING" ? 20_000 : false,
+      query.state.data?.user?.trainerStatus === "PENDING" ? 20_000 : false,
   });
 
   const me = meQuery.data?.user;
   const owner = isPlatformOwner(me?.walletAddress);
   const canTeach = owner || isApprovedTrainer(me);
-
-  // The JWT was minted before approval and still says TRAINEE. Refresh it once
-  // so session-based UI agrees with the database.
-  useEffect(() => {
-    if (!canTeach || owner || jwtSynced.current) return;
-    if (session?.user?.role === "TRAINER") return;
-    jwtSynced.current = true;
-    void update();
-  }, [canTeach, owner, session?.user?.role, update]);
 
   if (meQuery.isPending) {
     return (
@@ -89,7 +78,7 @@ function TrainerHome() {
           user={me}
           onRefresh={() => {
             void queryClient.invalidateQueries({ queryKey: queryKeys.me });
-            void update();
+            void update().catch(() => undefined);
           }}
         />
       </div>

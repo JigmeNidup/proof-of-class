@@ -77,50 +77,47 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       if (user) {
-        token.id = user.id as string;
+        token.id = (user.id as string) || token.id;
         token.address = user.address;
         token.role = user.role;
         token.trainerStatus = user.trainerStatus;
-      } else if (token.id && !token.trainerStatus) {
-        // Sessions minted before trainerStatus existed on the JWT.
-        const fresh = await prisma.user.findUnique({
-          where: { id: token.id },
-          select: { trainerStatus: true, role: true },
-        });
-        if (fresh) {
-          token.trainerStatus = fresh.trainerStatus;
-          token.role = fresh.role;
-        }
       }
 
-      // Role can change after sign-in (the owner approved, or the applicant
-      // just submitted), so refresh it when the client calls update().
-      if (trigger === "update" && token.id) {
-        const fresh = await prisma.user.findUnique({
-          where: { id: token.id },
-          select: {
-            role: true,
-            trainerStatus: true,
-            walletAddress: true,
-            displayName: true,
-          },
-        });
-        if (fresh) {
-          token.role = fresh.role;
-          token.trainerStatus = fresh.trainerStatus;
-          token.address = fresh.walletAddress;
-          token.name = fresh.displayName ?? fresh.walletAddress;
+      // Re-read trainer fields on every session check. Approval happens in
+      // another tab (the owner's dashboard), so a JWT minted as TRAINEE/PENDING
+      // would otherwise keep the approved trainer off the dashboard until they
+      // signed in again. Looking at the database here means they just refresh.
+      if (token.id) {
+        try {
+          const fresh = await prisma.user.findUnique({
+            where: { id: token.id },
+            select: {
+              role: true,
+              trainerStatus: true,
+              walletAddress: true,
+              displayName: true,
+            },
+          });
+          if (fresh) {
+            token.role = fresh.role;
+            token.trainerStatus = fresh.trainerStatus;
+            token.address = fresh.walletAddress;
+            token.name = fresh.displayName ?? fresh.walletAddress;
+          }
+        } catch (error) {
+          console.error("[auth] jwt trainer refresh failed", error);
         }
       }
 
       return token;
     },
     async session({ session, token }) {
+      session.user = session.user ?? ({} as typeof session.user);
       if (token.id) session.user.id = token.id;
       if (token.address) session.user.address = token.address;
-      if (token.role) session.user.role = token.role;
+      session.user.role = token.role ?? "TRAINEE";
       if (token.trainerStatus) session.user.trainerStatus = token.trainerStatus;
       return session;
     },

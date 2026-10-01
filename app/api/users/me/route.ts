@@ -1,4 +1,4 @@
-import { json, parseJsonBody, route } from "@/lib/api";
+import { json, parseJsonBody, route, unauthorized } from "@/lib/api";
 import { requireSession } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
 import { updateProfileSchema } from "@/lib/validation";
@@ -6,7 +6,7 @@ import { updateProfileSchema } from "@/lib/validation";
 export const GET = route(async () => {
   const session = await requireSession();
 
-  const user = await prisma.user.findUniqueOrThrow({
+  const user = await prisma.user.findUnique({
     where: { id: session.id },
     include: {
       memberships: {
@@ -20,6 +20,10 @@ export const GET = route(async () => {
       _count: { select: { ownedClassrooms: true, badges: true } },
     },
   });
+
+  if (!user) {
+    throw unauthorized("Your account no longer exists. Sign in again.");
+  }
 
   return json({ user });
 });
