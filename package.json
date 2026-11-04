@@ -25,6 +25,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@metamask/connect-evm": "^2.1.1",
     "@prisma/client": "^6.19.3",
     "@tanstack/react-query": "^5.102.8",
     "cross-env": "^10.1.0",

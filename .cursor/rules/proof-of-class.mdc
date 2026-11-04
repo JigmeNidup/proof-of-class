@@ -1,0 +1,16 @@
+---
+description: ProofOfClass architecture, auth, chain, and production constraints
+alwaysApply: true
+---
+
+# ProofOfClass
+
+Classroom DApp: Next.js 16 + `server.ts` (Socket.io), Prisma 6, Hardhat, SIWE.
+
+- **Server:** never `next dev`/`next start`. Use `npm run dev` / `npm start` (`tsx server.ts`). Skip Next handling for `/api/socket.io`.
+- **Trainers:** not self-serve. `requireApprovedTrainer` reads DB `role`+`trainerStatus`. Only `NEXT_PUBLIC_PLATFORM_OWNER_ADDRESS` approves via `/admin`. JWT trainer fields refresh from DB in `auth.ts`.
+- **Identity:** session wallet from Auth.js, never a body address as the actor (`lib/guards.ts`).
+- **AUTH_URL:** public origin (`https://class.jigmenidup.site` on Lightsail). `PORT` is listen-only (3050 in prod, 3000 local).
+- **Quick-call:** rank on server `hrtime`, not `clientClickAt`. Keep `QuickCallPanel` mounted across trainer tabs. Offline pill = no socket (custom server, nginx Upgrade headers, valid cookie).
+- **Chain:** `NEXT_PUBLIC_CHAIN_ID` 31337 or 11155111. Classrooms are chain-pinned. Rebuild after `NEXT_PUBLIC_*` changes.
+- **API:** `route()` + `json()` in `lib/api.ts` (BigInt). Next 16 `params` are Promises. Wagmi v3 `useConnection` / `mutate`.

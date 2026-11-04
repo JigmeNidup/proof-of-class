@@ -41,6 +41,7 @@
     "artifacts",
     "cache",
     "contracts",
-    "test"
+    "test",
+    "google-edition"
   ]
 }

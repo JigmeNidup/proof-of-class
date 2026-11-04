@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
+  // google-edition is a separate Next app. Keep it out of this build's
+  // file tracing even if something inside it is ever imported by accident.
+  outputFileTracingExcludes: {
+    "*": ["./google-edition/**/*"],
+  },
   // Next.js 16 blocks HMR websockets unless the Host/Origin you actually
   // browse with is listed here. Needed when `npm run dev` sits behind nginx
   // at class.jigmenidup.site rather than localhost:3000.

@@ -1,3 +1,6 @@
+# Standalone Google-login edition. Not part of this repo or this build.
+/google-edition/
+
 node_modules/
 .next/
 out/
