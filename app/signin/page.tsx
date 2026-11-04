@@ -20,7 +20,9 @@ export default function SignInPage() {
           subtitle="No password, no email. You sign a message to prove the address is yours."
         >
           <ol className="mb-5 space-y-2 text-sm text-ink-400">
-            <li>1. Connect MetaMask.</li>
+            <li>
+              1. Connect MetaMask. On a phone this opens the MetaMask app.
+            </li>
             <li>2. Sign the ProofOfClass message. This is free — no gas.</li>
             <li>3. Join a classroom with the code your trainer gave you.</li>
           </ol>

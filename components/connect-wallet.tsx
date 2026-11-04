@@ -17,10 +17,45 @@ import { APP_CHAIN_ID } from "@/lib/wagmi";
 import { shortenAddress } from "@/lib/utils";
 
 /**
- * Two-step onboarding: connect an injected wallet, then prove ownership of the
- * address by signing an EIP-4361 message. The signature is exchanged for an
- * Auth.js session cookie, which is what every API route and the websocket
- * handshake actually check.
+ * Phone browsers never inject window.ethereum. MetaMask's in-app browser does,
+ * but only after `ethereum#initialized`. Wait briefly, then fall back to the
+ * MetaMask app deeplink.
+ */
+function waitForInjectedProvider(timeoutMs: number): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  const ethereum = (window as Window & { ethereum?: unknown }).ethereum;
+  if (ethereum) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    const finish = (found: boolean) => {
+      window.removeEventListener("ethereum#initialized", onReady);
+      window.clearTimeout(timer);
+      resolve(found);
+    };
+    const onReady = () => {
+      finish(Boolean((window as Window & { ethereum?: unknown }).ethereum));
+    };
+    window.addEventListener("ethereum#initialized", onReady, { once: true });
+    const timer = window.setTimeout(
+      () =>
+        finish(Boolean((window as Window & { ethereum?: unknown }).ethereum)),
+      timeoutMs,
+    );
+  });
+}
+
+function explainConnectError(message: string): string {
+  if (/provider not found/i.test(message)) {
+    return "This browser has no wallet built in. On a phone, Connect opens the MetaMask app. Install MetaMask if it does not open, or open this page from MetaMask's browser.";
+  }
+  return message;
+}
+
+/**
+ * Two-step onboarding: connect a wallet, then prove ownership of the address
+ * by signing an EIP-4361 message. The signature is exchanged for an Auth.js
+ * session cookie, which is what every API route and the websocket handshake
+ * actually check.
  */
 export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
   const router = useRouter();
@@ -32,9 +67,8 @@ export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
   const { data: session, status } = useSession();
 
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
-
-  const injected = connectors.find((c) => c.type === "injected") ?? connectors[0];
   const isAuthenticated = status === "authenticated";
   const sessionMatchesWallet =
     isAuthenticated &&
@@ -85,6 +119,25 @@ export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
     }
   }
 
+  async function handleConnect() {
+    setError(null);
+    setConnecting(true);
+    try {
+      const hasProvider = await waitForInjectedProvider(1_500);
+      const connector = hasProvider
+        ? connectors.find((item) => item.id === "injected")
+        : connectors.find((item) => item.id === "metaMaskSDK");
+      if (!connector) throw new Error("MetaMask connector is not available.");
+      await connect.mutateAsync({ connector });
+    } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : "Could not connect the wallet";
+      setError(explainConnectError(message));
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   async function handleSignOut() {
     await signOut({ redirect: false });
     disconnect.mutate({});
@@ -94,19 +147,10 @@ export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
   if (!isConnected) {
     return (
       <div className="space-y-3">
-        <Button
-          onClick={() => injected && connect.mutate({ connector: injected })}
-          loading={connect.isPending}
-          disabled={!injected}
-        >
-          {injected ? "Connect MetaMask" : "No wallet detected"}
+        <Button onClick={handleConnect} loading={connecting || connect.isPending}>
+          Connect MetaMask
         </Button>
-        {!injected && (
-          <Alert tone="warning">
-            No injected wallet found. Install MetaMask, then reload this page.
-          </Alert>
-        )}
-        {connect.error && <Alert tone="danger">{connect.error.message}</Alert>}
+        {error && <Alert tone="danger">{error}</Alert>}
       </div>
     );
   }
