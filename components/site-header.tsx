@@ -75,7 +75,7 @@ export function SiteHeader() {
             />
             {CHAIN.name}
           </span>
-          <ConnectWallet />
+          <ConnectWallet compact />
         </div>
       </div>
     </header>

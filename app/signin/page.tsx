@@ -21,7 +21,7 @@ export default function SignInPage() {
         >
           <ol className="mb-5 space-y-2 text-sm text-ink-400">
             <li>
-              1. Connect MetaMask. On a phone this opens the MetaMask app.
+              1. Connect a wallet. On a phone this opens that wallet&apos;s app.
             </li>
             <li>2. Sign the ProofOfClass message. This is free — no gas.</li>
             <li>3. Join a classroom with the code your trainer gave you.</li>

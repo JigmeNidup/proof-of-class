@@ -1,6 +1,6 @@
 import { cookieStorage, createConfig, createStorage, http } from "wagmi";
 import { hardhat, sepolia } from "wagmi/chains";
-import { injected, metaMask } from "wagmi/connectors";
+import { coinbaseWallet, injected, metaMask, walletConnect } from "wagmi/connectors";
 
 export const APP_CHAIN_ID = Number(
   process.env.NEXT_PUBLIC_CHAIN_ID ?? hardhat.id,
@@ -11,18 +11,41 @@ export const APP_CHAIN_ID = Number(
 const chains =
   APP_CHAIN_ID === sepolia.id ? ([sepolia, hardhat] as const) : ([hardhat, sepolia] as const);
 
+const appOrigin =
+  typeof window === "undefined"
+    ? (process.env.AUTH_URL ?? "https://class.jigmenidup.site")
+    : window.location.origin;
+
+const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+
 export const wagmiConfig = createConfig({
   chains,
   connectors: [
-    // Desktop extension and the MetaMask in-app browser. Mobile injects
-    // window.ethereum after the page loads, so wait for that event.
+    // Browser extensions and in-app wallets. Each EIP-6963 wallet (Rabby,
+    // Trust, Brave, …) shows up on its own. Mobile injects late.
     injected({ shimDisconnect: true, unstable_shimAsyncInject: 2_000 }),
-    // Phone browsers (Safari, Chrome) have no injected provider. This
-    // connector opens the MetaMask app instead of throwing ProviderNotFound.
-    // Default mobile links are https://metamask.app.link universal links.
+    // Phone browsers have no injected provider. These open the wallet app.
     metaMask({
       dapp: { name: "ProofOfClass" },
     }),
+    coinbaseWallet({
+      appName: "ProofOfClass",
+      preference: { options: "eoaOnly" },
+    }),
+    ...(walletConnectProjectId
+      ? [
+          walletConnect({
+            projectId: walletConnectProjectId,
+            showQrModal: true,
+            metadata: {
+              name: "ProofOfClass",
+              description: "On-chain classroom rewards",
+              url: appOrigin,
+              icons: [`${appOrigin}/favicon.ico`],
+            },
+          }),
+        ]
+      : []),
   ],
   transports: {
     [hardhat.id]: http(

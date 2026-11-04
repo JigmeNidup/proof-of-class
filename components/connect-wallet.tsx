@@ -2,7 +2,7 @@
 
 import { getCsrfToken, signIn, signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createSiweMessage } from "viem/siwe";
 import {
   useConnection,
@@ -10,6 +10,7 @@ import {
   useConnectors,
   useDisconnect,
   useSignMessage,
+  type Connector,
 } from "wagmi";
 
 import { Alert, Button, Pill } from "@/components/ui";
@@ -17,9 +18,8 @@ import { APP_CHAIN_ID } from "@/lib/wagmi";
 import { shortenAddress } from "@/lib/utils";
 
 /**
- * Phone browsers never inject window.ethereum. MetaMask's in-app browser does,
- * but only after `ethereum#initialized`. Wait briefly, then fall back to the
- * MetaMask app deeplink.
+ * In-app browsers inject window.ethereum after `ethereum#initialized`.
+ * A normal phone browser never does.
  */
 function waitForInjectedProvider(timeoutMs: number): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false);
@@ -46,9 +46,28 @@ function waitForInjectedProvider(timeoutMs: number): Promise<boolean> {
 
 function explainConnectError(message: string): string {
   if (/provider not found/i.test(message)) {
-    return "This browser has no wallet built in. On a phone, Connect opens the MetaMask app. Install MetaMask if it does not open, or open this page from MetaMask's browser.";
+    return "This browser has no wallet built in. Choose a wallet to open its app, or open this page from the wallet's own browser.";
   }
   return message;
+}
+
+/**
+ * The generic "injected" connector throws when nothing is installed. Hide it
+ * once a named wallet is available, and keep one button per wallet name so
+ * MetaMask's extension and its app connector are not listed twice.
+ */
+function visibleConnectors(connectors: readonly Connector[]) {
+  const named = connectors.filter((connector) => connector.id !== "injected");
+  const source = named.length > 0 ? named : connectors;
+  const byName = new Map<string, Connector>();
+  for (const connector of source) {
+    const key = connector.name.toLowerCase();
+    const existing = byName.get(key);
+    if (!existing || (connector.type === "injected" && existing.type !== "injected")) {
+      byName.set(key, connector);
+    }
+  }
+  return [...byName.values()];
 }
 
 /**
@@ -57,7 +76,14 @@ function explainConnectError(message: string): string {
  * session cookie, which is what every API route and the websocket handshake
  * actually check.
  */
-export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
+export function ConnectWallet({
+  redirectTo,
+  compact = false,
+}: {
+  redirectTo?: string;
+  /** Header: one button that opens the wallet list. */
+  compact?: boolean;
+}) {
   const router = useRouter();
   const { address, isConnected, chainId } = useConnection();
   const connectors = useConnectors();
@@ -67,8 +93,15 @@ export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
   const { data: session, status } = useSession();
 
   const [error, setError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [ready, setReady] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const choices = visibleConnectors(connectors);
+
+  useEffect(() => {
+    setReady(true);
+  }, []);
   const isAuthenticated = status === "authenticated";
   const sessionMatchesWallet =
     isAuthenticated &&
@@ -119,22 +152,22 @@ export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
     }
   }
 
-  async function handleConnect() {
+  async function handleConnect(connector: Connector) {
     setError(null);
-    setConnecting(true);
+    setPendingId(connector.uid);
     try {
-      const hasProvider = await waitForInjectedProvider(1_500);
-      const connector = hasProvider
-        ? connectors.find((item) => item.id === "injected")
-        : connectors.find((item) => item.id === "metaMaskSDK");
-      if (!connector) throw new Error("MetaMask connector is not available.");
+      if (connector.id === "injected") {
+        const hasProvider = await waitForInjectedProvider(1_500);
+        if (!hasProvider) throw new Error("Provider not found.");
+      }
       await connect.mutateAsync({ connector });
+      setOpen(false);
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "Could not connect the wallet";
       setError(explainConnectError(message));
     } finally {
-      setConnecting(false);
+      setPendingId(null);
     }
   }
 
@@ -145,11 +178,54 @@ export function ConnectWallet({ redirectTo }: { redirectTo?: string }) {
   }
 
   if (!isConnected) {
+    const list = (
+      <div className="flex flex-col gap-2">
+        {choices.map((connector) => (
+          <Button
+            key={connector.uid}
+            variant="secondary"
+            className="w-full"
+            onClick={() => handleConnect(connector)}
+            loading={pendingId === connector.uid}
+            disabled={pendingId !== null && pendingId !== connector.uid}
+          >
+            {connector.name}
+          </Button>
+        ))}
+      </div>
+    );
+
+    if (!ready) {
+      return (
+        <Button variant="secondary" disabled>
+          Connect wallet
+        </Button>
+      );
+    }
+
+    if (compact) {
+      return (
+        <div className="relative">
+          <Button variant="secondary" onClick={() => setOpen((value) => !value)}>
+            Connect wallet
+          </Button>
+          {open && (
+            <div className="absolute right-0 z-50 mt-2 w-56 rounded-xl border border-ink-700 bg-ink-900 p-2 shadow-lg shadow-black/40">
+              {list}
+              {error && (
+                <div className="mt-2">
+                  <Alert tone="danger">{error}</Alert>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-3">
-        <Button onClick={handleConnect} loading={connecting || connect.isPending}>
-          Connect MetaMask
-        </Button>
+        {list}
         {error && <Alert tone="danger">{error}</Alert>}
       </div>
     );
