@@ -25,9 +25,11 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@coinbase/wallet-sdk": "^4.4.0",
     "@metamask/connect-evm": "^2.1.1",
     "@prisma/client": "^6.19.3",
     "@tanstack/react-query": "^5.102.8",
+    "@walletconnect/ethereum-provider": "^2.26.0",
     "cross-env": "^10.1.0",
     "next": "^16.3.3",
     "next-auth": "^5.0.0-beta.32",
@@ -37,7 +39,20 @@
     "socket.io-client": "^4.8.3",
     "viem": "^2.56.1",
     "wagmi": "^3.7.7",
-    "zod": "^4.5.4"
+    "zod": "^4.6.7"
+  },
+  "overrides": {
+    "lodash": "4.18.1",
+    "ws": "8.22.1",
+    "tmp": "0.2.7",
+    "serialize-javascript": "7.1.4",
+    "diff": "8.0.4",
+    "@fastify/busboy": "3.2.4",
+    "adm-zip": "0.6.1",
+    "bn.js": "4.12.3",
+    "cookie": "0.7.2",
+    "undici": "6.29.1",
+    "deepmerge-ts": "8.0.2"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
